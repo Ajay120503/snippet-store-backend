@@ -40,22 +40,32 @@ const prodOrigins = (
 
 const allowedOrigins = isProd ? prodOrigins : localOrigins;
 
+
+// Helper: allow *.vercel.app previews if enabled
+const allowVercelPreviews = process.env.ALLOW_VERCEL_PREVIEWS === "true";
+const isVercelPreview = (origin) => {
+  try {
+    const host = new URL(origin).hostname;
+    return /\.vercel\.app$/.test(host);
+  } catch {
+    return false;
+  }
+};
+
 app.use(
   cors({
     credentials: true,
     origin(origin, callback) {
-      // Allow non-browser tools without an Origin header (e.g., curl, Postman)
+      // Allow non-browser tools (no Origin), e.g., curl/Postman
       if (!origin) return callback(null, true);
 
-      // Strict match against our allowlist
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
-      // Optionally, allow subdomains (e.g., *.example.com) – keep commented unless needed
-      // const allowWildcard = (o) =>
-      //   o.endsWith(".example.com") || o === "https://example.com";
-      // if (allowWildcard(new URL(origin).hostname)) return callback(null, true);
+      if (isProd && allowVercelPreviews && isVercelPreview(origin)) {
+        return callback(null, true);
+      }
 
       return callback(new Error(`Not allowed by CORS: ${origin}`));
     },
