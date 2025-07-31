@@ -1,16 +1,20 @@
+// ------------------------------
 // server.js (ESM)
 // ------------------------------
-// Load environment variables early
+
+// ---- Load environment variables early ----
 import dotenv from "dotenv";
 dotenv.config();
 
-// Core deps
+// ---- Core dependencies ----
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import rateLimit from "express-rate-limit";
+import cron from "node-cron";
+import fetch from "node-fetch";
 
-// Your app code
+// ---- Your app code ----
 import connectDB from "./config/db.js";
 import authRoutes from "./routes/authRoutes.js";
 import snippetRoutes from "./routes/snippetRoutes.js";
@@ -21,12 +25,10 @@ connectDB();
 const app = express();
 const isProd = process.env.NODE_ENV === "production";
 
-// If you set secure cookies behind a proxy (Render, Railway, Nginx, etc.)
+// If using secure cookies behind a proxy (Render, Railway, etc.)
 app.set("trust proxy", 1);
 
-// ---- CORS (env-aware) ----
-// In production, set FRONTEND_URLS (comma separated) or FRONTEND_URL (single).
-// In development, we default to localhost:5173 (Vite).
+// ---- CORS Setup ----
 const localOrigins = [
   "http://localhost:5173", // Vite dev
 ];
@@ -40,8 +42,7 @@ const prodOrigins = (
 
 const allowedOrigins = isProd ? prodOrigins : localOrigins;
 
-
-// Helper: allow *.vercel.app previews if enabled
+// Optional: Allow Vercel preview deployments
 const allowVercelPreviews = process.env.ALLOW_VERCEL_PREVIEWS === "true";
 const isVercelPreview = (origin) => {
   try {
@@ -56,8 +57,7 @@ app.use(
   cors({
     credentials: true,
     origin(origin, callback) {
-      // Allow non-browser tools (no Origin), e.g., curl/Postman
-      if (!origin) return callback(null, true);
+      if (!origin) return callback(null, true); // Allow tools like curl/Postman
 
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
@@ -76,7 +76,7 @@ app.use(
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
-// ---- Rate limiter ----
+// ---- Rate Limiting ----
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -84,7 +84,7 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// ---- Health check ----
+// ---- Health Check ----
 app.get("/", (_req, res) => {
   res.send("✅ Server is Running...");
 });
@@ -93,7 +93,7 @@ app.get("/", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/snippets", snippetRoutes);
 
-// ---- Start server ----
+// ---- Start Server ----
 const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
@@ -101,4 +101,17 @@ app.listen(PORT, () => {
     `[CORS] NODE_ENV=${process.env.NODE_ENV || "development"} | allowedOrigins:`,
     allowedOrigins
   );
+});
+
+// ---- CRON: Ping server every 14 minutes ----
+const PING_URL = process.env.SELF_URL || `http://localhost:${PORT}`;
+
+cron.schedule("*/14 * * * *", async () => {
+  try {
+    const res = await fetch(PING_URL);
+    const text = await res.text();
+    console.log(`[CRON] Pinged ${PING_URL} - ${res.status}: ${text}`);
+  } catch (err) {
+    console.error(`[CRON] Failed to ping ${PING_URL}`, err.message);
+  }
 });
